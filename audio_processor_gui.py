@@ -10,72 +10,24 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 import pathlib
 import time
 import multiprocessing
-import signal
 import psutil
 import subprocess
 from datetime import datetime
 
-# 导入主调用脚本中的处理函数和视频检测函数
+# Import processing functions and video detection from the main script
 try:
     from process_audio import run_pipeline, is_video_file, DEFAULT_MAX_WORKERS
 except ImportError as e:
-    print(f"错误：无法导入process_audio.py模块。确保该文件在同一目录下。详细错误: {e}")
+    print(f"Error: Unable to import the process_audio.py module. Ensure the file is in the same directory. Details: {e}")
     sys.exit(1)
 
-# 确保多进程在Windows下正常工作
 if __name__ == "__main__":
-    # 设置多进程启动方法为spawn (在Windows上更稳定)
     multiprocessing.set_start_method('spawn', force=True)
 
-# 定义翻译字典
+# Define the translation dictionary
 translations = {
-    "zh_CN": {  # 简体中文
-        "title": "音频/视频转录与字幕生成工具",
-        "basic_settings": "基本设置",
-        "input_file": "输入文件(音频/视频):",
-        "browse": "浏览...",
-        "api_key": "Google AI API密钥:",
-        "show_hide": "显示/隐藏",
-        "output_dir": "输出目录 (可选):",
-        "process_params": "处理参数",
-        "content_type": "字幕内容:",
-        "content_desc": "(transcript:仅转录, translation:仅翻译, both:两者)",
-        "target_language": "翻译目标语言:",
-        "max_length": "最大片段长度(秒):",
-        "silence_length": "静音检测长度(毫秒):",
-        "silence_threshold": "静音阈值(dB):",
-        "first_chunk_offset": "首个片段偏移(秒):",
-        "cleanup": "处理完成后删除中间文件",
-        "start_process": "开始处理",
-        "stop_process": "停止处理",
-        "progress": "处理进度",
-        "ready": "就绪",
-        "processing": "处理中...",
-        "stopped": "已停止",
-        "file_not_selected": "未选择文件",
-        "video_file": "视频文件 (将自动转换为MP3)",
-        "audio_file": "音频文件",
-        "error_no_input": "错误: 请选择输入文件(音频或视频)",
-        "error_no_api_key": "错误: 请输入Google AI API密钥",
-        "confirm_start": "确认", 
-        "confirm_start_message": "确定要开始处理吗？\n这可能需要一段时间，具体取决于文件长度。",
-        "confirm_stop": "确认",
-        "confirm_stop_message": "确定要停止处理吗？\n当前进度将丢失。",
-        "confirm_close": "确认",
-        "confirm_close_message": "处理正在进行中。确定要退出吗？",
-        "complete": "完成",
-        "complete_message": "处理已完成！\n输出目录: {output_dir}",
-        "error": "错误",
-        "process_failed": "处理失败。请查看详细日志。",
-        "unexpected_error": "处理过程中发生错误:\n{error}",
-        "language": "语言/Language",
-        "select_file": "选择音频或视频文件",
-        "select_output_dir": "选择输出目录",
-        "user_stop": "用户手动停止处理。",
-        "model": "模型:"
-    },
-    "en_US": {  # 英文
-        "title": "Audio/Video Transcription and Subtitle Generator",
+    "en_US": {
+        "title": "Audio/Video Transcription (Gemini 3.0)",
         "basic_settings": "Basic Settings",
         "input_file": "Input File (Audio/Video):",
         "browse": "Browse...",
@@ -102,7 +54,7 @@ translations = {
         "audio_file": "Audio file",
         "error_no_input": "Error: Please select an input file (audio or video)",
         "error_no_api_key": "Error: Please enter a Google AI API Key",
-        "confirm_start": "Confirm", 
+        "confirm_start": "Confirm",
         "confirm_start_message": "Are you sure you want to start processing?\nThis may take some time depending on the file length.",
         "confirm_stop": "Confirm",
         "confirm_stop_message": "Are you sure you want to stop processing?\nCurrent progress will be lost.",
@@ -113,11 +65,88 @@ translations = {
         "error": "Error",
         "process_failed": "Processing failed. Please check the detailed log.",
         "unexpected_error": "An error occurred during processing:\n{error}",
-        "language": "语言/Language",
+        "language": "Language",
         "select_file": "Select Audio or Video File",
         "select_output_dir": "Select Output Directory",
         "user_stop": "User manually stopped processing.",
-        "model": "Model:"
+        "model": "Model:",
+        "retry_combine": "Retry Combine",
+        "open_error_file": "Open Error File",
+        "timestamp_error": "Timestamp Parse Error",
+        "timestamp_error_message": "Timestamp parsing errors detected. Please edit the error files and click the 'Retry Combine' button.",
+        "select_error_file": "Please select an error file to open",
+        "error_file_not_found": "Error file not found or has been moved",
+        "waiting_for_fix": "Waiting for fix...",
+        "parallel_requests": "Parallel Requests:",
+        "resume_from_breakpoint": "Resume from breakpoint (Skip existing transcription files)",
+        "skip_audio_segmentation": "Skip audio segmentation",
+        "audio_chunks_dir_label": "Audio Chunks Directory:",
+        "use_default_dir": "Use Default Directory",
+        "error_skip_segmentation_no_dir": "Error: Skip audio segmentation is selected, but no audio chunks directory is specified.",
+        "error_chunks_dir_not_found": "Error: The specified audio chunks directory '{dir}' does not exist.",
+        "error_select_input_first": "Please select an input file first to use the default audio chunks directory.",
+        "dir_not_exist_prompt": "The default audio chunks directory '{dir}' does not exist.\nDo you want to use this path anyway?"
+    },
+    "zh_CN": {
+        "title": "音频/视频转录与字幕生成工具 (Gemini 3.0)",
+        "basic_settings": "基本设置",
+        "input_file": "输入文件(音频/视频):",
+        "browse": "浏览...",
+        "api_key": "Google AI API密钥:",
+        "show_hide": "显示/隐藏",
+        "output_dir": "输出目录 (可选):",
+        "process_params": "处理参数",
+        "content_type": "字幕内容:",
+        "content_desc": "(transcript:仅转录, translation:仅翻译, both:两者)",
+        "target_language": "翻译目标语言:",
+        "max_length": "最大片段长度(秒):",
+        "silence_length": "静音检测长度(毫秒):",
+        "silence_threshold": "静音阈值(dB):",
+        "first_chunk_offset": "首个片段偏移(秒):",
+        "cleanup": "处理完成后删除中间文件",
+        "start_process": "开始处理",
+        "stop_process": "停止处理",
+        "progress": "处理进度",
+        "ready": "就绪",
+        "processing": "处理中...",
+        "stopped": "已停止",
+        "file_not_selected": "未选择文件",
+        "video_file": "视频文件 (将自动转换为MP3)",
+        "audio_file": "音频文件",
+        "error_no_input": "错误: 请选择输入文件(音频或视频)",
+        "error_no_api_key": "错误: 请输入Google AI API密钥",
+        "confirm_start": "确认",
+        "confirm_start_message": "确定要开始处理吗？\n这可能需要一段时间，具体取决于文件长度。",
+        "confirm_stop": "确认",
+        "confirm_stop_message": "确定要停止处理吗？\n当前进度将丢失。",
+        "confirm_close": "确认",
+        "confirm_close_message": "处理正在进行中。确定要退出吗？",
+        "complete": "完成",
+        "complete_message": "处理已完成！\n输出目录: {output_dir}",
+        "error": "错误",
+        "process_failed": "处理失败。请查看详细日志。",
+        "unexpected_error": "处理过程中发生错误:\n{error}",
+        "language": "语言",
+        "select_file": "选择音频或视频文件",
+        "select_output_dir": "选择输出目录",
+        "user_stop": "用户手动停止处理。",
+        "model": "模型:",
+        "retry_combine": "重试合并",
+        "open_error_file": "打开错误文件",
+        "timestamp_error": "时间戳解析错误",
+        "timestamp_error_message": "检测到时间戳解析错误。请修改出错的文件后点击“重试合并”按钮。",
+        "select_error_file": "请选择要打开的错误文件",
+        "error_file_not_found": "错误文件未找到或已被移动",
+        "waiting_for_fix": "等待修复...",
+        "parallel_requests": "并行请求数:",
+        "resume_from_breakpoint": "断点续传 (跳过已存在的转录文件)",
+        "skip_audio_segmentation": "跳过音频切分",
+        "audio_chunks_dir_label": "音频切片目录:",
+        "use_default_dir": "使用默认目录",
+        "error_skip_segmentation_no_dir": "错误: 已选择跳过切分音频，但未指定音频切片目录。",
+        "error_chunks_dir_not_found": "错误: 指定的音频切片目录 '{dir}' 不存在。",
+        "error_select_input_first": "请先选择输入文件，才能使用默认音频切片目录。",
+        "dir_not_exist_prompt": "默认音频切片目录 '{dir}' 不存在。\n是否仍要使用此路径？"
     }
 }
 
@@ -125,16 +154,13 @@ class AudioProcessorGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         
-        # 设置当前语言
-        self.current_language = tk.StringVar(value="zh_CN")  # 默认使用中文
+        self.current_language = tk.StringVar(value="en_US")
         
-        # 设置窗口标题和大小
-        self.title("音频/视频转录与字幕生成工具")
+        self.title(translations[self.current_language.get()]["title"])
         self.geometry("800x700")
         self.minsize(700, 600)
         
-        # 创建变量
-        self.input_file_path = tk.StringVar()  # 改名从input_audio_path为input_file_path
+        self.input_file_path = tk.StringVar()
         self.output_dir_path = tk.StringVar()
         self.api_key = tk.StringVar()
         self.content_choice = tk.StringVar(value="both")
@@ -144,290 +170,213 @@ class AudioProcessorGUI(tk.Tk):
         self.silence_threshold = tk.IntVar(value=-40)
         self.first_chunk_offset = tk.DoubleVar(value=0.0)
         self.cleanup = tk.BooleanVar(value=False)
-        self.model_name = tk.StringVar(value="gemini-1.5-flash") # 更新默认模型为更快的版本
-        self.skip_split = tk.BooleanVar(value=False)  # 新增：是否跳过切分音频步骤
-        self.audio_chunks_dir = tk.StringVar()  # 新增：现有音频切片目录
-        self.max_workers = tk.IntVar(value=DEFAULT_MAX_WORKERS)  # 新增：最大并行请求数
-        self.skip_existing = tk.BooleanVar(value=True)  # 新增：断点续传功能，默认启用
+        self.model_name = tk.StringVar(value="gemini-3-pro-preview")
+        self.skip_split = tk.BooleanVar(value=False)
+        self.audio_chunks_dir = tk.StringVar()
+        self.max_workers = tk.IntVar(value=DEFAULT_MAX_WORKERS)
+        self.skip_existing = tk.BooleanVar(value=True)
 
-        # 存储当前处理状态
         self.processing = False
         self.process_thread = None
-        self.process = None  # 存储子进程对象
-        self.process_pid = None  # 存储进程PID
-        self.waiting_for_user_fix = False  # 标记是否正在等待用户修复时间戳
-        self.error_files = []  # 存储需要修复的文件信息
+        self.process = None
+        self.process_pid = None
+        self.waiting_for_user_fix = False
+        self.error_files = []
         
-        # 创建进度队列和控制队列
         self.progress_queue = multiprocessing.Queue()
-        self.control_queue = multiprocessing.Queue()  # 新增控制队列，用于发送用户干预信号
+        self.control_queue = multiprocessing.Queue()
         
-        # 存储UI组件的引用
         self.ui_elements = {}
         
-        # 创建主界面
         self.create_widgets()
-        
-        # 启动队列检查
+        self.change_language()
         self.check_queue()
         
-        # 绑定关闭窗口事件
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
     
     def create_widgets(self):
-        """创建所有GUI组件"""
-        # 创建主框架
+        """Create all GUI components."""
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 在顶部添加语言选择
+        # Language selection
         lang_frame = ttk.Frame(main_frame)
         lang_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(lang_frame, text=translations[self.current_language.get()]["language"]).pack(side=tk.LEFT, padx=5)
+        self.ui_elements["language_label"] = ttk.Label(lang_frame)
+        self.ui_elements["language_label"].pack(side=tk.LEFT, padx=5)
         lang_combo = ttk.Combobox(lang_frame, textvariable=self.current_language, width=10)
-        lang_combo['values'] = ('zh_CN', 'en_US')
-        lang_combo.current(0 if self.current_language.get() == 'zh_CN' else 1)
+        lang_combo['values'] = ('en_US', 'zh_CN')
+        lang_combo.current(0)
         lang_combo.pack(side=tk.LEFT, padx=5)
-        
-        # 绑定语言切换事件
         lang_combo.bind("<<ComboboxSelected>>", self.change_language)
         
-        # 创建输入框架
-        input_frame = ttk.LabelFrame(main_frame, text=translations[self.current_language.get()]["basic_settings"], padding="10")
+        # Input frame
+        input_frame = ttk.LabelFrame(main_frame, padding="10")
         input_frame.pack(fill=tk.X, pady=5)
         self.ui_elements["basic_settings_frame"] = input_frame
         
-        # 输入文件（音频或视频）
-        input_file_label = ttk.Label(input_frame, text=translations[self.current_language.get()]["input_file"])
-        input_file_label.grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["input_file_label"] = input_file_label
-        
+        # Input file
+        self.ui_elements["input_file_label"] = ttk.Label(input_frame)
+        self.ui_elements["input_file_label"].grid(row=0, column=0, sticky=tk.W, pady=5)
         ttk.Entry(input_frame, textvariable=self.input_file_path, width=50).grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
-        browse_btn = ttk.Button(input_frame, text=translations[self.current_language.get()]["browse"], command=self.browse_input_file)
-        browse_btn.grid(row=0, column=2, sticky=tk.W, pady=5)
-        self.ui_elements["browse_input_btn"] = browse_btn
+        self.ui_elements["browse_input_btn"] = ttk.Button(input_frame, command=self.browse_input_file)
+        self.ui_elements["browse_input_btn"].grid(row=0, column=2, sticky=tk.W, pady=5)
         
-        # 文件类型指示器
-        self.file_type_var = tk.StringVar(value=translations[self.current_language.get()]["file_not_selected"])
-        file_type_label = ttk.Label(input_frame, textvariable=self.file_type_var, foreground="blue")
-        file_type_label.grid(row=0, column=3, sticky=tk.W, pady=5, padx=5)
-        self.ui_elements["file_type_label"] = file_type_label
+        self.file_type_var = tk.StringVar()
+        self.ui_elements["file_type_label"] = ttk.Label(input_frame, textvariable=self.file_type_var, foreground="blue")
+        self.ui_elements["file_type_label"].grid(row=0, column=3, sticky=tk.W, pady=5, padx=5)
         
-        # API密钥
-        api_key_label = ttk.Label(input_frame, text=translations[self.current_language.get()]["api_key"])
-        api_key_label.grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["api_key_label"] = api_key_label
-        
+        # API Key
+        self.ui_elements["api_key_label"] = ttk.Label(input_frame)
+        self.ui_elements["api_key_label"].grid(row=1, column=0, sticky=tk.W, pady=5)
         api_key_entry = ttk.Entry(input_frame, textvariable=self.api_key, width=50, show="*")
         api_key_entry.grid(row=1, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
+        self.ui_elements["show_hide_btn"] = ttk.Button(input_frame, command=lambda: self.toggle_api_key_visibility(api_key_entry))
+        self.ui_elements["show_hide_btn"].grid(row=1, column=2, sticky=tk.W, pady=5)
         
-        show_hide_btn = ttk.Button(input_frame, text=translations[self.current_language.get()]["show_hide"], 
-                               command=lambda: self.toggle_api_key_visibility(api_key_entry))
-        show_hide_btn.grid(row=1, column=2, sticky=tk.W, pady=5)
-        self.ui_elements["show_hide_btn"] = show_hide_btn
-        
-        # 如果有环境变量API_KEY，就使用它
         env_api_key = os.environ.get("GOOGLE_API_KEY")
         if env_api_key:
             self.api_key.set(env_api_key)
         
-        # 输出目录
-        output_dir_label = ttk.Label(input_frame, text=translations[self.current_language.get()]["output_dir"])
-        output_dir_label.grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["output_dir_label"] = output_dir_label
-        
+        # Output directory
+        self.ui_elements["output_dir_label"] = ttk.Label(input_frame)
+        self.ui_elements["output_dir_label"].grid(row=2, column=0, sticky=tk.W, pady=5)
         ttk.Entry(input_frame, textvariable=self.output_dir_path, width=50).grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
+        self.ui_elements["browse_output_btn"] = ttk.Button(input_frame, command=self.browse_output_dir)
+        self.ui_elements["browse_output_btn"].grid(row=2, column=2, sticky=tk.W, pady=5)
         
-        browse_output_btn = ttk.Button(input_frame, text=translations[self.current_language.get()]["browse"], 
-                                 command=self.browse_output_dir)
-        browse_output_btn.grid(row=2, column=2, sticky=tk.W, pady=5)
-        self.ui_elements["browse_output_btn"] = browse_output_btn
-        
-        # 创建参数框架
-        params_frame = ttk.LabelFrame(main_frame, text=translations[self.current_language.get()]["process_params"], padding="10")
+        # Parameters frame
+        params_frame = ttk.LabelFrame(main_frame, padding="10")
         params_frame.pack(fill=tk.X, pady=5)
         self.ui_elements["params_frame"] = params_frame
         
-        # 创建参数网格
-        # 内容选择
-        content_label = ttk.Label(params_frame, text=translations[self.current_language.get()]["content_type"])
-        content_label.grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["content_label"] = content_label
-        
+        # Content type
+        self.ui_elements["content_label"] = ttk.Label(params_frame)
+        self.ui_elements["content_label"].grid(row=0, column=0, sticky=tk.W, pady=5)
         content_combo = ttk.Combobox(params_frame, textvariable=self.content_choice, width=15)
         content_combo['values'] = ('transcript', 'translation', 'both')
-        content_combo.current(2)  # 默认选择 'both'
+        content_combo.current(2)
         content_combo.grid(row=0, column=1, sticky=tk.W, pady=5)
+        self.ui_elements["content_desc_label"] = ttk.Label(params_frame)
+        self.ui_elements["content_desc_label"].grid(row=0, column=2, sticky=tk.W, pady=5)
         
-        content_desc_label = ttk.Label(params_frame, text=translations[self.current_language.get()]["content_desc"])
-        content_desc_label.grid(row=0, column=2, sticky=tk.W, pady=5)
-        self.ui_elements["content_desc_label"] = content_desc_label
-        
-        # 目标语言
-        target_lang_label = ttk.Label(params_frame, text=translations[self.current_language.get()]["target_language"])
-        target_lang_label.grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["target_lang_label"] = target_lang_label
-        
+        # Target language
+        self.ui_elements["target_lang_label"] = ttk.Label(params_frame)
+        self.ui_elements["target_lang_label"].grid(row=1, column=0, sticky=tk.W, pady=5)
         target_lang_combo = ttk.Combobox(params_frame, textvariable=self.target_language, width=15)
         target_lang_combo['values'] = ('Simplified Chinese', 'Traditional Chinese', 'English', 'Japanese', 'Korean', 'Russian', 'Spanish', 'French', 'German')
-        target_lang_combo.current(0)  # 默认选择 'Simplified Chinese'
+        target_lang_combo.current(0)
         target_lang_combo.grid(row=1, column=1, sticky=tk.W, pady=5)
 
-        # 新增：模型选择
-        model_label = ttk.Label(params_frame, text="模型:")
-        model_label.grid(row=1, column=2, sticky=tk.W, pady=5, padx=(10, 0))
-        self.ui_elements["model_label"] = model_label
-
-        model_combo = ttk.Combobox(params_frame, textvariable=self.model_name, width=20)
-        # 添加常见的 Gemini 模型选项，可以根据需要调整
-        model_combo['values'] = ('gemini-2.0-flash', 'gemini-2.5-pro-preview-03-25', 'gemini-2.5-flash-preview-04-17')
-        model_combo.current(0) # 默认选择 flash
+        # Model selection
+        self.ui_elements["model_label"] = ttk.Label(params_frame)
+        self.ui_elements["model_label"].grid(row=1, column=2, sticky=tk.W, pady=5, padx=(10, 0))
+        model_combo = ttk.Combobox(params_frame, textvariable=self.model_name, width=22)
+        
+        # Updated Model List for Gemini 3.0
+        model_combo['values'] = ('gemini-3-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-flash')
+        model_combo.current(0) # Default to gemini-3-pro-preview
+        
         model_combo.grid(row=1, column=3, sticky=tk.W, pady=5)
         self.ui_elements["model_combo"] = model_combo
         
-        # 新增：并行处理设置
-        parallel_label = ttk.Label(params_frame, text="并行请求数:")
-        parallel_label.grid(row=2, column=2, sticky=tk.W, pady=5, padx=(10, 0))
-        self.ui_elements["parallel_label"] = parallel_label
-        
-        parallel_spinbox = ttk.Spinbox(params_frame, from_=1, to=20, increment=1, textvariable=self.max_workers, width=5)
-        parallel_spinbox.grid(row=2, column=3, sticky=tk.W, pady=5)
-        self.ui_elements["parallel_spinbox"] = parallel_spinbox
+        # Parallel processing
+        self.ui_elements["parallel_label"] = ttk.Label(params_frame)
+        self.ui_elements["parallel_label"].grid(row=2, column=2, sticky=tk.W, pady=5, padx=(10, 0))
+        self.ui_elements["parallel_spinbox"] = ttk.Spinbox(params_frame, from_=1, to=20, increment=1, textvariable=self.max_workers, width=5)
+        self.ui_elements["parallel_spinbox"].grid(row=2, column=3, sticky=tk.W, pady=5)
 
-        # 音频切分参数
-        max_length_label = ttk.Label(params_frame, text=translations[self.current_language.get()]["max_length"])
-        max_length_label.grid(row=3, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["max_length_label"] = max_length_label
-        
+        # Audio splitting parameters
+        self.ui_elements["max_length_label"] = ttk.Label(params_frame)
+        self.ui_elements["max_length_label"].grid(row=3, column=0, sticky=tk.W, pady=5)
         ttk.Spinbox(params_frame, from_=60, to=900, increment=30, textvariable=self.max_length, width=5).grid(row=3, column=1, sticky=tk.W, pady=5)
         
-        silence_length_label = ttk.Label(params_frame, text=translations[self.current_language.get()]["silence_length"])
-        silence_length_label.grid(row=4, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["silence_length_label"] = silence_length_label
-        
+        self.ui_elements["silence_length_label"] = ttk.Label(params_frame)
+        self.ui_elements["silence_length_label"].grid(row=4, column=0, sticky=tk.W, pady=5)
         ttk.Spinbox(params_frame, from_=100, to=2000, increment=100, textvariable=self.silence_length, width=5).grid(row=4, column=1, sticky=tk.W, pady=5)
         
-        silence_threshold_label = ttk.Label(params_frame, text=translations[self.current_language.get()]["silence_threshold"])
-        silence_threshold_label.grid(row=5, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["silence_threshold_label"] = silence_threshold_label
-        
+        self.ui_elements["silence_threshold_label"] = ttk.Label(params_frame)
+        self.ui_elements["silence_threshold_label"].grid(row=5, column=0, sticky=tk.W, pady=5)
         ttk.Spinbox(params_frame, from_=-60, to=-20, increment=5, textvariable=self.silence_threshold, width=5).grid(row=5, column=1, sticky=tk.W, pady=5)
         
-        # 字幕参数
-        first_chunk_offset_label = ttk.Label(params_frame, text=translations[self.current_language.get()]["first_chunk_offset"])
-        first_chunk_offset_label.grid(row=6, column=0, sticky=tk.W, pady=5)
-        self.ui_elements["first_chunk_offset_label"] = first_chunk_offset_label
-        
+        self.ui_elements["first_chunk_offset_label"] = ttk.Label(params_frame)
+        self.ui_elements["first_chunk_offset_label"].grid(row=6, column=0, sticky=tk.W, pady=5)
         ttk.Spinbox(params_frame, from_=-5.0, to=5.0, increment=0.1, textvariable=self.first_chunk_offset, width=5).grid(row=6, column=1, sticky=tk.W, pady=5)
         
-        # 新增：断点续传选项
-        skip_existing_checkbox = ttk.Checkbutton(params_frame, text="断点续传 (跳过已存在的转录文件)", variable=self.skip_existing)
-        skip_existing_checkbox.grid(row=7, column=2, columnspan=2, sticky=tk.W, pady=5)
-        self.ui_elements["skip_existing_checkbox"] = skip_existing_checkbox
+        # Resume from breakpoint
+        self.ui_elements["skip_existing_checkbox"] = ttk.Checkbutton(params_frame, variable=self.skip_existing)
+        self.ui_elements["skip_existing_checkbox"].grid(row=7, column=2, columnspan=2, sticky=tk.W, pady=5)
         
-        # 清理选项
-        cleanup_checkbox = ttk.Checkbutton(params_frame, text=translations[self.current_language.get()]["cleanup"], variable=self.cleanup)
-        cleanup_checkbox.grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=5)
-        self.ui_elements["cleanup_checkbox"] = cleanup_checkbox
+        # Cleanup
+        self.ui_elements["cleanup_checkbox"] = ttk.Checkbutton(params_frame, variable=self.cleanup)
+        self.ui_elements["cleanup_checkbox"].grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=5)
         
-        # 新增：跳过音频切分选项
+        # Skip audio segmentation
         skip_split_frame = ttk.Frame(params_frame)
         skip_split_frame.grid(row=8, column=0, columnspan=4, sticky=tk.W, pady=5)
         
-        skip_split_checkbox = ttk.Checkbutton(skip_split_frame, text="跳过音频切分", variable=self.skip_split, command=self.toggle_audio_chunks_controls)
-        skip_split_checkbox.grid(row=0, column=0, sticky=tk.W)
-        self.ui_elements["skip_split_checkbox"] = skip_split_checkbox
+        self.ui_elements["skip_split_checkbox"] = ttk.Checkbutton(skip_split_frame, variable=self.skip_split, command=self.toggle_audio_chunks_controls)
+        self.ui_elements["skip_split_checkbox"].grid(row=0, column=0, sticky=tk.W)
         
-        # 音频切片目录选择
-        audio_chunks_dir_label = ttk.Label(skip_split_frame, text="音频切片目录:")
-        audio_chunks_dir_label.grid(row=0, column=1, sticky=tk.W, padx=(20, 5))
-        self.ui_elements["audio_chunks_dir_label"] = audio_chunks_dir_label
+        self.ui_elements["audio_chunks_dir_label"] = ttk.Label(skip_split_frame)
+        self.ui_elements["audio_chunks_dir_label"].grid(row=0, column=1, sticky=tk.W, padx=(20, 5))
+        self.ui_elements["audio_chunks_dir_entry"] = ttk.Entry(skip_split_frame, textvariable=self.audio_chunks_dir, width=30)
+        self.ui_elements["audio_chunks_dir_entry"].grid(row=0, column=2, sticky=tk.W, padx=5)
+        self.ui_elements["browse_chunks_btn"] = ttk.Button(skip_split_frame, command=self.browse_audio_chunks_dir)
+        self.ui_elements["browse_chunks_btn"].grid(row=0, column=3, sticky=tk.W)
+        self.ui_elements["use_default_chunks_btn"] = ttk.Button(skip_split_frame, command=self.use_default_audio_chunks_dir)
+        self.ui_elements["use_default_chunks_btn"].grid(row=0, column=4, sticky=tk.W, padx=5)
         
-        audio_chunks_dir_entry = ttk.Entry(skip_split_frame, textvariable=self.audio_chunks_dir, width=30)
-        audio_chunks_dir_entry.grid(row=0, column=2, sticky=tk.W, padx=5)
-        self.ui_elements["audio_chunks_dir_entry"] = audio_chunks_dir_entry
-        
-        browse_chunks_btn = ttk.Button(skip_split_frame, text="浏览...", command=self.browse_audio_chunks_dir)
-        browse_chunks_btn.grid(row=0, column=3, sticky=tk.W)
-        self.ui_elements["browse_chunks_btn"] = browse_chunks_btn
-        
-        # 新增：使用默认音频切片目录按钮
-        use_default_chunks_btn = ttk.Button(skip_split_frame, text="使用默认目录", command=self.use_default_audio_chunks_dir)
-        use_default_chunks_btn.grid(row=0, column=4, sticky=tk.W, padx=5)
-        self.ui_elements["use_default_chunks_btn"] = use_default_chunks_btn
-        
-        # 默认禁用音频切片目录选择控件
         self.toggle_audio_chunks_controls()
         
-        # 创建按钮框架
+        # Buttons
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X, pady=10)
         
-        # 添加按钮
-        self.start_button = ttk.Button(button_frame, text=translations[self.current_language.get()]["start_process"], command=self.start_processing)
+        self.start_button = ttk.Button(button_frame, command=self.start_processing)
         self.start_button.pack(side=tk.LEFT, padx=5)
         
-        self.stop_button = ttk.Button(button_frame, text=translations[self.current_language.get()]["stop_process"], command=self.stop_processing, state=tk.DISABLED)
+        self.stop_button = ttk.Button(button_frame, command=self.stop_processing, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT, padx=5)
         
-        # 添加用户修复错误和重试按钮 - 默认禁用
-        self.retry_button = ttk.Button(button_frame, text="重试合并", command=self.retry_combine, state=tk.DISABLED)
+        self.retry_button = ttk.Button(button_frame, command=self.retry_combine, state=tk.DISABLED)
         self.retry_button.pack(side=tk.LEFT, padx=5)
         self.ui_elements["retry_button"] = self.retry_button
         
-        self.open_error_file_button = ttk.Button(button_frame, text="打开错误文件", command=self.open_error_file, state=tk.DISABLED)
+        self.open_error_file_button = ttk.Button(button_frame, command=self.open_error_file, state=tk.DISABLED)
         self.open_error_file_button.pack(side=tk.LEFT, padx=5)
         self.ui_elements["open_error_file_button"] = self.open_error_file_button
         
-        # 创建进度框架
-        progress_frame = ttk.LabelFrame(main_frame, text=translations[self.current_language.get()]["progress"], padding="10")
+        # Progress frame
+        progress_frame = ttk.LabelFrame(main_frame, padding="10")
         progress_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         self.ui_elements["progress_frame"] = progress_frame
         
-        # 添加进度显示
         self.progress_text = scrolledtext.ScrolledText(progress_frame, wrap=tk.WORD, height=15)
         self.progress_text.pack(fill=tk.BOTH, expand=True)
         self.progress_text.config(state=tk.DISABLED)
         
-        # 底部状态栏
-        self.status_var = tk.StringVar(value=translations[self.current_language.get()]["ready"])
+        # Status bar
+        self.status_var = tk.StringVar()
         status_bar = ttk.Label(self, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # 添加翻译条目
-        if "zh_CN" in translations:
-            translations["zh_CN"]["retry_combine"] = "重试合并"
-            translations["zh_CN"]["open_error_file"] = "打开错误文件"
-            translations["zh_CN"]["timestamp_error"] = "时间戳解析错误"
-            translations["zh_CN"]["timestamp_error_message"] = "检测到时间戳解析错误。请修改出错的文件后点击\"重试合并\"按钮。"
-            translations["zh_CN"]["select_error_file"] = "请选择要打开的错误文件"
-            translations["zh_CN"]["error_file_not_found"] = "错误文件未找到或已被移动"
-            translations["zh_CN"]["waiting_for_fix"] = "等待修复..."
-        if "en_US" in translations:
-            translations["en_US"]["retry_combine"] = "Retry Combine"
-            translations["en_US"]["open_error_file"] = "Open Error File"
-            translations["en_US"]["timestamp_error"] = "Timestamp Parse Error"
-            translations["en_US"]["timestamp_error_message"] = "Timestamp parsing errors detected. Please edit the error files and click 'Retry Combine' button."
-            translations["en_US"]["select_error_file"] = "Please select an error file to open"
-            translations["en_US"]["error_file_not_found"] = "Error file not found or has been moved"
-            translations["en_US"]["waiting_for_fix"] = "Waiting for fix..."
-    
+
     def toggle_api_key_visibility(self, entry):
-        """切换API密钥的可见性"""
+        """Toggle the visibility of the API key."""
         if entry.cget('show') == '*':
             entry.config(show='')
         else:
             entry.config(show='*')
     
     def browse_input_file(self):
-        """打开文件浏览器选择输入文件（音频或视频）"""
+        """Open a file browser to select an input file."""
         lang = self.current_language.get()
         filetypes = (
-            ("所有支持的文件", "*.mp3 *.wav *.flac *.m4a *.aac *.ogg *.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm *.m4v"),
-            ("音频文件", "*.mp3 *.wav *.flac *.m4a *.aac *.ogg"),
-            ("视频文件", "*.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm *.m4v"),
-            ("所有文件", "*.*")
+            ("All supported files", "*.mp3 *.wav *.flac *.m4a *.aac *.ogg *.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm *.m4v"),
+            ("Audio files", "*.mp3 *.wav *.flac *.m4a *.aac *.ogg"),
+            ("Video files", "*.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm *.m4v"),
+            ("All files", "*.*")
         )
         filepath = filedialog.askopenfilename(
             title=translations[lang]["select_file"],
@@ -436,68 +385,52 @@ class AudioProcessorGUI(tk.Tk):
         
         if filepath:
             self.input_file_path.set(filepath)
-            # 如果没有设置输出目录，则使用输入文件名创建目录路径
             if not self.output_dir_path.get():
                 input_path = pathlib.Path(filepath)
                 self.output_dir_path.set(os.path.join(input_path.parent, input_path.stem))
             
-            # 更新文件类型指示器
             if is_video_file(filepath):
                 self.file_type_var.set(translations[lang]["video_file"])
             else:
                 self.file_type_var.set(translations[lang]["audio_file"])
     
     def browse_output_dir(self):
-        """打开文件浏览器选择输出目录"""
+        """Open a file browser to select an output directory."""
         dirpath = filedialog.askdirectory(
             title=translations[self.current_language.get()]["select_output_dir"]
         )
-        
         if dirpath:
             self.output_dir_path.set(dirpath)
     
     def start_processing(self):
-        """开始处理音频文件"""
-        # 检查必要参数
+        """Start the audio processing."""
+        lang = self.current_language.get()
         if not self.input_file_path.get():
-            messagebox.showerror(translations[self.current_language.get()]["error"], translations[self.current_language.get()]["error_no_input"])
+            messagebox.showerror(translations[lang]["error"], translations[lang]["error_no_input"])
             return
         
         if not self.api_key.get():
-            messagebox.showerror(translations[self.current_language.get()]["error"], translations[self.current_language.get()]["error_no_api_key"])
+            messagebox.showerror(translations[lang]["error"], translations[lang]["error_no_api_key"])
             return
         
-        # 检查跳过切分音频时是否指定了音频切片目录
         if self.skip_split.get() and not self.audio_chunks_dir.get():
-            messagebox.showerror(
-                translations[self.current_language.get()]["error"],
-                "错误: 已选择跳过切分音频，但未指定音频切片目录。"
-            )
+            messagebox.showerror(translations[lang]["error"], translations[lang]["error_skip_segmentation_no_dir"])
             return
         
-        # 如果指定了音频切片目录，检查目录是否存在
         if self.skip_split.get() and not os.path.isdir(self.audio_chunks_dir.get()):
-            messagebox.showerror(
-                translations[self.current_language.get()]["error"],
-                f"错误: 指定的音频切片目录 '{self.audio_chunks_dir.get()}' 不存在。"
-            )
+            messagebox.showerror(translations[lang]["error"], translations[lang]["error_chunks_dir_not_found"].format(dir=self.audio_chunks_dir.get()))
             return
         
-        # 确认处理
-        if not messagebox.askyesno(translations[self.current_language.get()]["confirm_start"], translations[self.current_language.get()]["confirm_start_message"]):
+        if not messagebox.askyesno(translations[lang]["confirm_start"], translations[lang]["confirm_start_message"]):
             return
         
-        # 重置错误文件列表和等待修复状态
         self.error_files = []
         self.waiting_for_user_fix = False
-        
-        # 确保重试和打开错误文件按钮处于禁用状态
         self.retry_button.config(state=tk.DISABLED)
         self.open_error_file_button.config(state=tk.DISABLED)
         
-        # 准备参数
         params = {
-            'input_audio': self.input_file_path.get(),  # 保持与process_audio.py兼容
+            'input_audio': self.input_file_path.get(),
             'output_dir': self.output_dir_path.get(),
             'api_key': self.api_key.get(),
             'content': self.content_choice.get(),
@@ -507,35 +440,31 @@ class AudioProcessorGUI(tk.Tk):
             'silence_threshold': self.silence_threshold.get(),
             'first_chunk_offset': self.first_chunk_offset.get(),
             'cleanup': self.cleanup.get(),
-            'model_name': self.model_name.get(), # 传递模型名称
-            'skip_split': self.skip_split.get(), # 新增：是否跳过切分音频
-            'audio_chunks_dir': self.audio_chunks_dir.get() if self.skip_split.get() else None, # 新增：音频切片目录
-            'max_workers': self.max_workers.get() # 新增：传递并行处理数量
+            'model_name': self.model_name.get(),
+            'skip_split': self.skip_split.get(),
+            'audio_chunks_dir': self.audio_chunks_dir.get() if self.skip_split.get() else None,
+            'max_workers': self.max_workers.get(),
+            'skip_existing': self.skip_existing.get()
         }
         
-        # 更新UI状态
         self.processing = True
         self.start_button.config(state=tk.DISABLED)
         self.stop_button.config(state=tk.NORMAL)
-        self.status_var.set(translations[self.current_language.get()]["processing"])
+        self.status_var.set(translations[lang]["processing"])
         
-        # 清空进度显示
         self.progress_text.config(state=tk.NORMAL)
         self.progress_text.delete(1.0, tk.END)
         self.progress_text.config(state=tk.DISABLED)
         
-        # 记录开始时间
         self.start_time = time.time()
         
-        # 启动处理进程
         self.process = multiprocessing.Process(
             target=run_pipeline,
-            args=(params, self.progress_queue, self.control_queue)  # 添加控制队列
+            args=(params, self.progress_queue, self.control_queue)
         )
         self.process.start()
         self.process_pid = self.process.pid
         
-        # 启动监控线程来检查进程状态
         self.process_thread = threading.Thread(
             target=self.monitor_process,
             daemon=True
@@ -543,54 +472,49 @@ class AudioProcessorGUI(tk.Tk):
         self.process_thread.start()
     
     def retry_combine(self):
-        """用户修复时间戳错误后，发送重试信号"""
+        """Send a retry signal after the user fixes a timestamp error."""
         if not self.waiting_for_user_fix:
             return
-            
-        # 更新状态
-        self.status_var.set(translations[self.current_language.get()]["processing"])
-        self.add_progress("发送重试信号，继续合并转录...")
         
-        # 发送重试信号到控制队列
+        lang = self.current_language.get()
+        self.status_var.set(translations[lang]["processing"])
+        self.add_progress("Sending retry signal, continuing with transcript combination...")
+        
         self.control_queue.put('RETRY_COMBINE')
         
-        # 更新 UI 状态
         self.waiting_for_user_fix = False
         self.retry_button.config(state=tk.DISABLED)
         self.open_error_file_button.config(state=tk.DISABLED)
     
     def open_error_file(self):
-        """打开包含时间戳错误的文件供用户修改"""
+        """Open the file with the timestamp error for the user to edit."""
+        lang = self.current_language.get()
         if not self.error_files:
             messagebox.showinfo(
-                translations[self.current_language.get()]["timestamp_error"],
-                "没有需要修复的文件信息。"
+                translations[lang]["timestamp_error"],
+                "No file information to fix."
             )
             return
             
-        # 如果只有一个错误文件，直接打开
         if len(self.error_files) == 1:
-            error_info = self.error_files[0]
-            self.open_file_with_default_editor(error_info)
+            self.open_file_with_default_editor(self.error_files[0])
             return
             
-        # 如果有多个错误文件，显示选择对话框
         error_file_options = []
         for i, error_info in enumerate(self.error_files):
-            filename = error_info.get("file", "未知文件")
-            section = error_info.get("section", "未知段落")
-            timestamp = error_info.get("timestamp_str", "未知时间戳")
+            filename = error_info.get("file", "Unknown File")
+            section = error_info.get("section", "Unknown Section")
+            timestamp = error_info.get("timestamp_str", "Unknown Timestamp")
             error_file_options.append(f"{i+1}. {filename} - {section} - {timestamp}")
         
-        # 创建一个简单的对话框让用户选择
         select_dialog = tk.Toplevel(self)
-        select_dialog.title(translations[self.current_language.get()]["select_error_file"])
+        select_dialog.title(translations[lang]["select_error_file"])
         select_dialog.geometry("500x300")
         select_dialog.resizable(False, False)
         select_dialog.transient(self)
         select_dialog.grab_set()
         
-        ttk.Label(select_dialog, text="请选择要打开的错误文件:").pack(pady=10)
+        ttk.Label(select_dialog, text="Please select the error file to open:").pack(pady=10)
         
         listbox = tk.Listbox(select_dialog, width=70, height=10)
         for option in error_file_options:
@@ -599,18 +523,18 @@ class AudioProcessorGUI(tk.Tk):
         
         def on_select():
             selected_idx = listbox.curselection()
-            if selected_idx:  # 确保选择了某项
-                error_info = self.error_files[selected_idx[0]]
-                self.open_file_with_default_editor(error_info)
+            if selected_idx:
+                self.open_file_with_default_editor(self.error_files[selected_idx[0]])
                 select_dialog.destroy()
             else:
-                messagebox.showinfo("提示", "请选择一个文件")
+                messagebox.showinfo("Hint", "Please select a file")
         
-        ttk.Button(select_dialog, text="打开选中文件", command=on_select).pack(pady=10)
-        ttk.Button(select_dialog, text="取消", command=select_dialog.destroy).pack(pady=5)
+        ttk.Button(select_dialog, text="Open Selected File", command=on_select).pack(pady=10)
+        ttk.Button(select_dialog, text="Cancel", command=select_dialog.destroy).pack(pady=5)
     
     def open_file_with_default_editor(self, error_info):
-        """使用系统默认编辑器打开包含错误的文件"""
+        """Open the file containing the error with the system's default editor."""
+        lang = self.current_language.get()
         if not error_info or "file" not in error_info:
             return
             
@@ -618,56 +542,44 @@ class AudioProcessorGUI(tk.Tk):
         output_dir = self.output_dir_path.get()
         
         if not output_dir:
-            messagebox.showerror(
-                translations[self.current_language.get()]["error"],
-                "输出目录未设置，无法定位错误文件。"
-            )
+            messagebox.showerror(translations[lang]["error"], "Output directory is not set, cannot locate the error file.")
             return
             
         intermediate_dir = os.path.join(output_dir, "intermediate_transcripts")
         file_path = os.path.join(intermediate_dir, filename)
         
         if not os.path.exists(file_path):
-            messagebox.showerror(
-                translations[self.current_language.get()]["error"],
-                translations[self.current_language.get()]["error_file_not_found"]
-            )
+            messagebox.showerror(translations[lang]["error"], translations[lang]["error_file_not_found"])
             return
             
-        # 获取行号信息
         line_num = error_info.get("line_num", 1)
-        section = error_info.get("section", "未知段落")
-        timestamp = error_info.get("timestamp_str", "未知时间戳")
+        section = error_info.get("section", "Unknown Section")
+        timestamp = error_info.get("timestamp_str", "Unknown Timestamp")
         
-        # 向用户显示错误详情
-        self.add_progress(f"打开错误文件: {file_path}")
-        self.add_progress(f"问题位置: 第 {line_num} 行, 段落: {section}, 时间戳: {timestamp}")
-        self.add_progress("请修复不正确的时间戳格式，然后点击'重试合并'按钮。")
+        self.add_progress(f"Opening error file: {file_path}")
+        self.add_progress(f"Location of issue: Line {line_num}, Section: {section}, Timestamp: {timestamp}")
+        self.add_progress("Please correct the timestamp format, then click the 'Retry Combine' button.")
         
-        # 尝试使用系统默认应用程序打开文件
         try:
-            if sys.platform == 'win32':  # Windows
+            if sys.platform == 'win32':
                 os.startfile(file_path)
-            elif sys.platform == 'darwin':  # macOS
+            elif sys.platform == 'darwin':
                 subprocess.call(['open', file_path])
-            else:  # Linux
+            else:
                 subprocess.call(['xdg-open', file_path])
         except Exception as e:
-            messagebox.showerror(
-                translations[self.current_language.get()]["error"],
-                f"无法打开文件: {str(e)}"
-            )
+            messagebox.showerror(translations[lang]["error"], f"Unable to open file: {str(e)}")
     
     def stop_processing(self):
-        """暴力停止处理进程及其所有子进程"""
+        """Forcefully stop the processing and all its child processes."""
         if not self.processing or not self.process_pid:
             return
         
-        if messagebox.askyesno(translations[self.current_language.get()]["confirm_stop"], translations[self.current_language.get()]["confirm_stop_message"]):
-            self.add_progress(f"\n{translations[self.current_language.get()]['user_stop']}")
-            self.status_var.set(translations[self.current_language.get()]["stopped"])
+        lang = self.current_language.get()
+        if messagebox.askyesno(translations[lang]["confirm_stop"], translations[lang]["confirm_stop_message"]):
+            self.add_progress(f"\n{translations[lang]['user_stop']}")
+            self.status_var.set(translations[lang]["stopped"])
             
-            # 如果正在等待用户修复，发送停止信号
             if self.waiting_for_user_fix:
                 self.control_queue.put('STOP_PROCESSING')
                 self.waiting_for_user_fix = False
@@ -675,48 +587,31 @@ class AudioProcessorGUI(tk.Tk):
                 self.open_error_file_button.config(state=tk.DISABLED)
             
             try:
-                # 获取主进程
                 parent = psutil.Process(self.process_pid)
-                
-                # 先获取所有子进程
                 children = parent.children(recursive=True)
-                
-                # 终止所有子进程
                 for child in children:
                     try:
                         child.terminate()
-                    except:
-                        # 如果无法正常终止，则强制终止
-                        try:
-                            child.kill()
-                        except:
-                            pass
-                
-                # 终止主进程
-                try:
-                    parent.terminate()
-                except:
-                    # 如果无法正常终止，则强制终止
-                    try:
-                        parent.kill()
-                    except:
+                    except psutil.NoSuchProcess:
                         pass
                 
-                # 确保进程已终止
+                try:
+                    parent.terminate()
+                except psutil.NoSuchProcess:
+                    pass
+
                 gone, still_alive = psutil.wait_procs(children + [parent], timeout=3)
                 
-                # 强制杀死仍然存活的进程
                 for p in still_alive:
                     try:
                         p.kill()
-                    except:
+                    except psutil.NoSuchProcess:
                         pass
                 
-                self.add_progress("所有相关进程已强制终止。")
+                self.add_progress("All related processes have been terminated.")
             except Exception as e:
-                self.add_progress(f"终止进程时发生错误: {str(e)}")
+                self.add_progress(f"An error occurred while terminating processes: {str(e)}")
             
-            # 更新UI状态
             self.processing = False
             self.start_button.config(state=tk.NORMAL)
             self.stop_button.config(state=tk.DISABLED)
@@ -724,81 +619,68 @@ class AudioProcessorGUI(tk.Tk):
             self.process_pid = None
     
     def check_queue(self):
-        """检查进度队列，更新进度显示"""
+        """Check the progress queue and update the display."""
         try:
             while True:
-                # 从队列中获取消息
                 message = self.progress_queue.get_nowait()
-                
-                # 检查是否为对象（例如错误数据字典）
                 if isinstance(message, dict) and message.get('type') == 'PARSE_ERROR':
                     self.handle_parse_error(message)
                 else:
                     self.add_progress(message)
         except queue.Empty:
             pass
-        
-        # 每100毫秒检查一次队列
         self.after(100, self.check_queue)
     
     def handle_parse_error(self, error_data):
-        """处理时间戳解析错误的特殊消息"""
+        """Handle special messages for timestamp parsing errors."""
+        lang = self.current_language.get()
         self.error_files = error_data.get('errors', [])
         self.waiting_for_user_fix = True
         
-        # 更新UI状态
-        self.status_var.set(translations[self.current_language.get()]["waiting_for_fix"])
-        
-        # 启用重试按钮和打开错误文件按钮
+        self.status_var.set(translations[lang]["waiting_for_fix"])
         self.retry_button.config(state=tk.NORMAL)
         self.open_error_file_button.config(state=tk.NORMAL)
         
-        # 添加提示信息到进度显示
         self.add_progress("\n" + "-" * 50)
-        self.add_progress(f"检测到 {len(self.error_files)} 个时间戳解析错误！")
-        self.add_progress(translations[self.current_language.get()]["timestamp_error_message"])
-        self.add_progress("错误文件列表:")
+        self.add_progress(f"Detected {len(self.error_files)} timestamp parsing errors!")
+        self.add_progress(translations[lang]["timestamp_error_message"])
+        self.add_progress("List of erroneous files:")
         
-        # 显示错误详情
         for i, error in enumerate(self.error_files):
-            error_detail = (f"  {i+1}. 文件: {error.get('file', '未知')}, "
-                           f"部分: {error.get('section', '未知')}, "
-                           f"行号: {error.get('line_num', '未知')}, "
-                           f"时间戳: '{error.get('timestamp_str', '未知')}'")
+            error_detail = (f"  {i+1}. File: {error.get('file', 'Unknown')}, "
+                           f"Section: {error.get('section', 'Unknown')}, "
+                           f"Line: {error.get('line_num', 'Unknown')}, "
+                           f"Timestamp: '{error.get('timestamp_str', 'Unknown')}'")
             self.add_progress(error_detail)
         
         self.add_progress("-" * 50)
         
-        # 弹出提示消息
         messagebox.showinfo(
-            translations[self.current_language.get()]["timestamp_error"],
-            translations[self.current_language.get()]["timestamp_error_message"]
+            translations[lang]["timestamp_error"],
+            translations[lang]["timestamp_error_message"]
         )
     
     def add_progress(self, message):
-        """向进度显示添加消息"""
+        """Add a message to the progress display."""
         self.progress_text.config(state=tk.NORMAL)
         self.progress_text.insert(tk.END, f"{message}\n")
-        self.progress_text.see(tk.END)  # 滚动到底部
+        self.progress_text.see(tk.END)
         self.progress_text.config(state=tk.DISABLED)
-        
-        # 更新界面
         self.update_idletasks()
     
     def on_closing(self):
-        """窗口关闭时的处理"""
+        """Handle window closing."""
         if self.processing:
             if not messagebox.askyesno(translations[self.current_language.get()]["confirm_close"], translations[self.current_language.get()]["confirm_close_message"]):
                 return
-        
         self.destroy()
     
-    def change_language(self, event):
-        """切换语言"""
+    def change_language(self, event=None):
+        """Change the language of the GUI."""
         lang = self.current_language.get()
         
-        # 更新所有UI元素的文本
         self.title(translations[lang]["title"])
+        self.ui_elements["language_label"].config(text=translations[lang]["language"])
         self.ui_elements["basic_settings_frame"].config(text=translations[lang]["basic_settings"])
         self.ui_elements["input_file_label"].config(text=translations[lang]["input_file"])
         self.ui_elements["browse_input_btn"].config(text=translations[lang]["browse"])
@@ -820,15 +702,19 @@ class AudioProcessorGUI(tk.Tk):
         self.ui_elements["progress_frame"].config(text=translations[lang]["progress"])
         self.ui_elements["retry_button"].config(text=translations[lang]["retry_combine"])
         self.ui_elements["open_error_file_button"].config(text=translations[lang]["open_error_file"])
-        self.ui_elements["model_label"].config(text=translations[lang]["model"]) # 更新模型标签
+        self.ui_elements["model_label"].config(text=translations[lang]["model"])
+        self.ui_elements["parallel_label"].config(text=translations[lang]["parallel_requests"])
+        self.ui_elements["skip_existing_checkbox"].config(text=translations[lang]["resume_from_breakpoint"])
+        self.ui_elements["skip_split_checkbox"].config(text=translations[lang]["skip_audio_segmentation"])
+        self.ui_elements["audio_chunks_dir_label"].config(text=translations[lang]["audio_chunks_dir_label"])
+        self.ui_elements["browse_chunks_btn"].config(text=translations[lang]["browse"])
+        self.ui_elements["use_default_chunks_btn"].config(text=translations[lang]["use_default_dir"])
 
-        # 更新状态栏
         if self.waiting_for_user_fix:
             self.status_var.set(translations[lang]["waiting_for_fix"])
         else:
             self.status_var.set(translations[lang]["ready"])
         
-        # 更新文件类型提示信息
         if self.input_file_path.get():
             if is_video_file(self.input_file_path.get()):
                 self.file_type_var.set(translations[lang]["video_file"])
@@ -838,31 +724,23 @@ class AudioProcessorGUI(tk.Tk):
             self.file_type_var.set(translations[lang]["file_not_selected"])
 
     def monitor_process(self):
-        """监控处理进程，当进程完成时更新UI状态"""
+        """Monitor the processing and update the UI when it's complete."""
         if not self.process:
             return
             
-        # 等待进程完成
         self.process.join()
         
-        # 如果进程自然完成（而不是被强制终止），更新UI状态
-        if not self.processing:
-            return  # 如果已经通过stop_processing更新了状态，不再处理
-        
-        # 如果在等待用户修复，则不改变界面状态
-        if self.waiting_for_user_fix:
+        if not self.processing or self.waiting_for_user_fix:
             return
             
-        # 进程自然完成，更新UI状态
         elapsed = time.time() - self.start_time
-        self.add_progress(f"\n处理完成! 总耗时: {elapsed:.2f}秒")
+        self.add_progress(f"\nProcessing complete! Total time: {elapsed:.2f} seconds")
         
         self.processing = False
         self.start_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
         self.status_var.set(translations[self.current_language.get()]["ready"])
         
-        # 显示处理完成的消息
         if self.output_dir_path.get():
             messagebox.showinfo(
                 translations[self.current_language.get()]["complete"], 
@@ -870,54 +748,36 @@ class AudioProcessorGUI(tk.Tk):
             )
     
     def toggle_audio_chunks_controls(self):
-        """根据是否跳过音频切分选项，启用或禁用音频切片目录控件"""
-        if self.skip_split.get():
-            # 启用音频切片目录控件
-            self.ui_elements["audio_chunks_dir_entry"].config(state="normal")
-            self.ui_elements["browse_chunks_btn"].config(state="normal")
-            self.ui_elements["audio_chunks_dir_label"].config(state="normal")
-        else:
-            # 禁用音频切片目录控件
-            self.ui_elements["audio_chunks_dir_entry"].config(state="disabled")
-            self.ui_elements["browse_chunks_btn"].config(state="disabled")
-            self.ui_elements["audio_chunks_dir_label"].config(state="disabled")
+        """Enable or disable the audio chunks directory controls."""
+        state = "normal" if self.skip_split.get() else "disabled"
+        self.ui_elements["audio_chunks_dir_entry"].config(state=state)
+        self.ui_elements["browse_chunks_btn"].config(state=state)
+        self.ui_elements["audio_chunks_dir_label"].config(state=state)
+        self.ui_elements["use_default_chunks_btn"].config(state=state)
             
     def browse_audio_chunks_dir(self):
-        """打开文件浏览器选择现有的音频切片目录"""
-        dirpath = filedialog.askdirectory(
-            title="选择现有的音频切片目录"
-        )
-        
+        """Open a file browser to select an existing audio chunks directory."""
+        dirpath = filedialog.askdirectory(title="Select Existing Audio Chunks Directory")
         if dirpath:
             self.audio_chunks_dir.set(dirpath)
     
     def use_default_audio_chunks_dir(self):
-        """使用默认音频切片目录（与输入文件同名的目录下的audio_chunks）"""
-        # 检查是否已选择输入文件
+        """Use the default audio chunks directory."""
+        lang = self.current_language.get()
         if not self.input_file_path.get():
-            messagebox.showerror(
-                translations[self.current_language.get()]["error"],
-                "请先选择输入文件，才能使用默认音频切片目录"
-            )
+            messagebox.showerror(translations[lang]["error"], translations[lang]["error_select_input_first"])
             return
             
-        # 计算默认的音频切片目录路径
         input_path = pathlib.Path(self.input_file_path.get())
         default_output_dir = os.path.join(input_path.parent, input_path.stem)
         default_chunks_dir = os.path.join(default_output_dir, "audio_chunks")
         
-        # 检查默认目录是否存在
         if not os.path.exists(default_chunks_dir):
-            result = messagebox.askyesno(
-                "目录不存在",
-                f"默认音频切片目录 '{default_chunks_dir}' 不存在。\n是否仍要使用此路径？"
-            )
-            if not result:
+            if not messagebox.askyesno("Directory Not Found", translations[lang]["dir_not_exist_prompt"].format(dir=default_chunks_dir)):
                 return
         
-        # 设置音频切片目录
         self.audio_chunks_dir.set(default_chunks_dir)
-        self.add_progress(f"已设置默认音频切片目录: {default_chunks_dir}")
+        self.add_progress(f"Set default audio chunks directory: {default_chunks_dir}")
 
 if __name__ == "__main__":
     app = AudioProcessorGUI()
