@@ -1,5 +1,6 @@
 import os
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import time
 import pathlib
 import random
@@ -11,10 +12,26 @@ API_KEY = "YOUR_API_KEY_HERE" # Will be overwritten by the GUI/Main script
 AUDIO_DIR = "audio_chunks"
 INTERMEDIATE_DIR = "intermediate_transcripts"
 MAX_RETRIES = 5
-INITIAL_DELAY = 2
-DEFAULT_MODEL = "gemini-3-pro-preview" # Updated to Gemini 3.0
-DEFAULT_MAX_WORKERS = 5
+INITIAL_DELAY = 3  # Increased base delay
+DEFAULT_MODEL = "gemini-3-pro-preview" # Gemini 3 Pro for accurate transcription (Flash causes hallucination)
+DEFAULT_MAX_WORKERS = 2  # Reduced from 5 to avoid overloading the API
+
+# Vertex AI regions for failover - ordered by typical reliability/capacity
+VERTEX_REGIONS = [
+    "us-central1",
+    "us-east4", 
+    "us-west1",
+    "europe-west1",
+    "europe-west4",
+    "asia-northeast1",
+    "asia-southeast1",
+]
 # ---------------------
+
+# Global client management
+_thread_local = threading.local()
+_current_region_index = 0
+_region_lock = threading.Lock()
 
 def get_system_instruction(target_language="Simplified Chinese"):
     return f"""You are an expert transcription engine powered by Gemini 3.0.
@@ -48,63 +65,138 @@ Timestamped Translation:
 [00:05.500] Second sentence of the translation.
 """
 
-def initialize_genai_client(api_key):
-    """Initializes the GenAI client."""
+def get_next_region():
+    """Get the next region in rotation for failover."""
+    global _current_region_index
+    with _region_lock:
+        region = VERTEX_REGIONS[_current_region_index]
+        _current_region_index = (_current_region_index + 1) % len(VERTEX_REGIONS)
+        return region
+
+def create_client(api_key=None, project_id=None, use_vertex=False, region=None):
+    """Creates a GenAI client with optional Vertex AI configuration."""
+    if use_vertex and project_id:
+        # Use Vertex AI with region-based routing
+        location = region or VERTEX_REGIONS[0]
+        print(f"  Using Vertex AI region: {location}")
+        return genai.Client(
+            vertexai=True,
+            project=project_id,
+            location=location
+        )
+    else:
+        # Use standard Gemini API with API key
+        return genai.Client(api_key=api_key)
+
+def get_client(api_key=None, project_id=None, use_vertex=False, region=None):
+    """Gets or creates a thread-local GenAI client."""
+    # Create new client if region changed or doesn't exist
+    client_key = f"{use_vertex}_{region}_{project_id}_{api_key[:8] if api_key else 'none'}"
+    
+    if not hasattr(_thread_local, 'client_key') or _thread_local.client_key != client_key:
+        _thread_local.client = create_client(api_key, project_id, use_vertex, region)
+        _thread_local.client_key = client_key
+    
+    return _thread_local.client
+
+def initialize_genai_client(api_key=None, project_id=None, use_vertex=False):
+    """Initializes the GenAI client (validates the configuration)."""
     try:
-        genai.configure(api_key=api_key)
+        if use_vertex and project_id:
+            client = genai.Client(vertexai=True, project=project_id, location=VERTEX_REGIONS[0])
+        else:
+            client = genai.Client(api_key=api_key)
+        _thread_local.client = client
         return True
     except Exception as e:
         print(f"Error initializing GenAI client: {e}")
         return None
 
-def process_audio_file(filepath, intermediate_dir, system_instruction, model_name):
+def process_audio_file(filepath, intermediate_dir, system_instruction, model_name, api_key, project_id=None, use_vertex=False):
     """Processes a single audio file: uploads, transcribes, and saves the result."""
     filename = os.path.basename(filepath)
     transcript_filename = pathlib.Path(filename).stem + ".txt"
     intermediate_filepath = os.path.join(intermediate_dir, transcript_filename)
 
+    current_region = None
+    
     for attempt in range(MAX_RETRIES):
+        uploaded_file = None
         try:
+            # On retry after 503/504, try a different region if using Vertex AI
+            if use_vertex and attempt > 0:
+                current_region = get_next_region()
+                print(f"  Switching to region: {current_region}")
+            
+            # Get client (with potential region change)
+            client = get_client(api_key, project_id, use_vertex, current_region)
+            
             print(f"  Uploading {filename} (Attempt {attempt + 1}/{MAX_RETRIES})...")
-            # Gemini 3.0 uses the standard File API
-            audio_file = genai.upload_file(path=filepath)
+            
+            # Upload file using new SDK
+            uploaded_file = client.files.upload(file=filepath)
             
             # Wait for processing to complete (important for large files)
-            while audio_file.state.name == "PROCESSING":
-                time.sleep(1)
-                audio_file = genai.get_file(audio_file.name)
+            while uploaded_file.state.name == "PROCESSING":
+                time.sleep(2)
+                uploaded_file = client.files.get(name=uploaded_file.name)
             
-            if audio_file.state.name == "FAILED":
+            if uploaded_file.state.name == "FAILED":
                 raise ValueError("Audio file upload failed processing.")
 
             print(f"  Transcribing {filename} with model {model_name}...")
             
-            # Low temperature for deterministic timestamps
-            generation_config = genai.types.GenerationConfig(
-                temperature=0.2
+            # Use simplified content pattern - just pass file and prompt directly
+            # Lower temperature (0.2) for more deterministic, accurate transcription
+            response = client.models.generate_content(
+                model=model_name,
+                contents=["Please process this audio file strictly according to the system instructions.", uploaded_file],
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.2  # Very low for accurate transcription, reduces hallucination
+                )
             )
             
-            model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
-            response = model.generate_content(
-                ["Please process this audio file strictly according to the system instructions.", audio_file],
-                generation_config=generation_config
-            )
-            
-            # Handle potential "thinking" blocks in Gemini 3.0 if present, though .text usually extracts the final answer
             transcript = response.text
 
             with open(intermediate_filepath, "w", encoding="utf-8") as f:
                 f.write(transcript)
             
             print(f"  Successfully processed and saved: {intermediate_filepath}")
-            genai.delete_file(audio_file.name)
+            
+            # Clean up uploaded file
+            try:
+                client.files.delete(name=uploaded_file.name)
+            except Exception:
+                pass  # Ignore deletion errors
+                
             return transcript
 
         except Exception as e:
+            error_str = str(e)
             print(f"  Error processing {filename} (Attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+            
+            # Try to clean up on error
+            if uploaded_file:
+                try:
+                    client.files.delete(name=uploaded_file.name)
+                except Exception:
+                    pass
+                    
             if attempt < MAX_RETRIES - 1:
-                delay = (INITIAL_DELAY * (2 ** attempt)) + random.uniform(0, 1)
-                print(f"  Retrying in {delay:.2f} seconds...")
+                # Determine if this is a rate limit / overload error
+                is_overload = "503" in error_str or "overload" in error_str.lower() or "unavailable" in error_str.lower()
+                is_timeout = "504" in error_str or "deadline" in error_str.lower() or "timeout" in error_str.lower()
+                
+                if is_overload:
+                    delay = (INITIAL_DELAY * (3 ** attempt)) + random.uniform(2, 6)
+                    print(f"  Model overloaded. Will try different region. Waiting {delay:.2f} seconds...")
+                elif is_timeout:
+                    delay = (INITIAL_DELAY * (2 ** attempt)) + random.uniform(1, 4)
+                    print(f"  Request timed out. Will try different region. Waiting {delay:.2f} seconds...")
+                else:
+                    delay = (INITIAL_DELAY * (2 ** attempt)) + random.uniform(0, 2)
+                    print(f"  Retrying in {delay:.2f} seconds...")
                 time.sleep(delay)
             else:
                 error_message = f"Error processing {filename} after {MAX_RETRIES} attempts: {e}\n"
@@ -114,10 +206,12 @@ def process_audio_file(filepath, intermediate_dir, system_instruction, model_nam
                 return ""
     return ""
 
-def run_transcription(api_key, audio_dir, intermediate_dir, system_instruction, model_name=DEFAULT_MODEL, progress_queue=None, max_workers=DEFAULT_MAX_WORKERS, skip_existing=True):
+def run_transcription(api_key, audio_dir, intermediate_dir, system_instruction, model_name=DEFAULT_MODEL, 
+                      progress_queue=None, max_workers=DEFAULT_MAX_WORKERS, skip_existing=True,
+                      project_id=None, use_vertex=False):
     """Transcribes all audio files in a directory in parallel."""
-    if not initialize_genai_client(api_key):
-        if progress_queue: progress_queue.put("Failed to initialize GenAI client. Check API key.")
+    if not initialize_genai_client(api_key, project_id, use_vertex):
+        if progress_queue: progress_queue.put("Failed to initialize GenAI client. Check API key or project configuration.")
         return False
 
     pathlib.Path(intermediate_dir).mkdir(parents=True, exist_ok=True)
@@ -161,7 +255,10 @@ def run_transcription(api_key, audio_dir, intermediate_dir, system_instruction, 
             update_progress(f"({processed_count}/{len(audio_files)}) Skipping existing valid transcript: {filename}")
             return "SKIPPED"
         
-        result = process_audio_file(filepath, intermediate_dir, system_instruction, model_name)
+        # Add small delay between requests to avoid rate limits
+        time.sleep(random.uniform(0.5, 1.5))
+        
+        result = process_audio_file(filepath, intermediate_dir, system_instruction, model_name, api_key, project_id, use_vertex)
         
         with count_lock:
             processed_count += 1
@@ -174,7 +271,8 @@ def run_transcription(api_key, audio_dir, intermediate_dir, system_instruction, 
         return result
 
     actual_workers = min(max_workers, len(audio_files))
-    update_progress(f"Starting transcription of {len(audio_files)} files with {actual_workers} parallel workers using {model_name}...")
+    mode_str = f"Vertex AI (regions: {', '.join(VERTEX_REGIONS[:3])}...)" if use_vertex else "Gemini API"
+    update_progress(f"Starting transcription of {len(audio_files)} files with {actual_workers} workers using {model_name} via {mode_str}...")
 
     start_time = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=actual_workers) as executor:
@@ -192,7 +290,9 @@ def run_transcription(api_key, audio_dir, intermediate_dir, system_instruction, 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Transcribe audio files.")
-    parser.add_argument("--api-key", required=True, help="Google AI API key.")
+    parser.add_argument("--api-key", help="Google AI API key (for Gemini API mode).")
+    parser.add_argument("--project-id", help="Google Cloud project ID (for Vertex AI mode).")
+    parser.add_argument("--use-vertex", action="store_true", help="Use Vertex AI instead of Gemini API for region failover support.")
     parser.add_argument("--audio-dir", default=AUDIO_DIR)
     parser.add_argument("--intermediate-dir", default=INTERMEDIATE_DIR)
     parser.add_argument("--target-language", default="Simplified Chinese")
@@ -200,5 +300,18 @@ if __name__ == "__main__":
     parser.add_argument("--max-workers", type=int, default=DEFAULT_MAX_WORKERS)
     args = parser.parse_args()
 
+    if not args.api_key and not args.project_id:
+        print("Error: Either --api-key or --project-id (with --use-vertex) is required.")
+        exit(1)
+
     system_instruction = get_system_instruction(args.target_language)
-    run_transcription(args.api_key, args.audio_dir, args.intermediate_dir, system_instruction, args.model_name, max_workers=args.max_workers)
+    run_transcription(
+        api_key=args.api_key, 
+        audio_dir=args.audio_dir, 
+        intermediate_dir=args.intermediate_dir, 
+        system_instruction=system_instruction, 
+        model_name=args.model_name, 
+        max_workers=args.max_workers,
+        project_id=args.project_id,
+        use_vertex=args.use_vertex
+    )
